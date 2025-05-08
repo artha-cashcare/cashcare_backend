@@ -1,9 +1,10 @@
 from rest_framework import generics
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
-from .models import CustomUser  # Use your custom user model
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from .models import CustomUser
 from django.contrib.auth import authenticate
-from .serializers import RegisterSerializer, LoginSerializer, UserSerializer,SendOTPSerializer, VerifyOTPSerializer
+from .serializers import (RegisterSerializer, LoginSerializer, UserSerializer, 
+                         SendOTPSerializer, VerifyOTPSerializer, ProfileSerializer)
 from django.http import JsonResponse
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.tokens import default_token_generator
@@ -21,7 +22,6 @@ import random
 from django.core.mail import send_mail
 from django.utils import timezone
 from .models import EmailOTP
-
 # RegisterView: for user registration
 class RegisterView(generics.CreateAPIView):
     queryset = CustomUser.objects.all()
@@ -54,7 +54,8 @@ class LoginView(generics.GenericAPIView):
         return Response({
             "refresh": str(refresh),
             "access": str(refresh.access_token),
-            "user": UserSerializer(user).data
+            "user": UserSerializer(user, context={"request": request}).data
+
         })
 
 
@@ -176,3 +177,23 @@ class VerifyOTPView(APIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserSerializer(request.user, context={'request': request})
+        return Response(serializer.data)
+
+    def patch(self, request):
+        # Handle file upload separately if needed
+        serializer = ProfileSerializer(
+            request.user, 
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
