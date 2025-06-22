@@ -4,6 +4,9 @@ from django.contrib.auth.password_validation import validate_password
 from .models import EmailOTP
 from rest_framework.exceptions import ValidationError
 
+from rest_framework import serializers
+from .models import ExpenseCategory,Expense,IncomeCategory,Income,Receipt
+
 User = get_user_model()
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -79,3 +82,198 @@ class VerifyOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6)
     
+
+
+
+
+class IncomeSerializer(serializers.ModelSerializer):
+    category = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = Income
+        fields = ['amount', 'category', 'origin']
+    
+    def create(self, validated_data):
+        category_name = validated_data.pop('category').lower()
+        category, _ = IncomeCategory.objects.get_or_create(
+            category_name=category_name
+        )
+        return Income.objects.create(
+            **validated_data,
+            category=category  # Store category ID, not name
+        )
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['category'] = instance.category.category_name
+        return representation
+
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    category = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = Expense
+        fields = ['amount', 'category', 'origin']
+    
+    def create(self, validated_data):
+        category_name = validated_data.pop('category').lower()
+        category, _ = ExpenseCategory.objects.get_or_create(
+            category_name=category_name
+        )
+        return Expense.objects.create(
+            **validated_data,
+            category=category  # Store category ID, not name
+        )
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['category'] = instance.category.category_name
+        return representation
+
+    
+
+from rest_framework import serializers
+from .models import History
+
+class HistorySerializer(serializers.ModelSerializer):
+    type_display = serializers.CharField(source='get_type_display', read_only=True)
+    
+    class Meta:
+        model = History
+        fields = [
+            'id',
+            'amount',
+            'type',
+            'type_display',
+            'timestamp',
+            'source',
+            'category',
+            'description',
+            'reference_id'
+        ]
+        read_only_fields = fields  # All fields are read-only
+from rest_framework import serializers
+from .models import Receipt, ExpenseCategory
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class ExpenseCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExpenseCategory
+        fields = ['id', 'category_name']
+
+class ReceiptSerializer(serializers.ModelSerializer):
+    category = serializers.CharField(write_only=True)
+    linked_expense = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = Receipt
+        fields = [
+            'id', 'file_path', 'scanned_text', 
+            'amount', 'category', 'date', 
+            'timestamp', 'linked_expense'
+        ]
+        read_only_fields = [
+            'id', 'timestamp', 'scanned_text',
+            'linked_expense'
+        ]
+    
+    def get_linked_expense(self, obj):
+        """Returns basic info about the linked expense if it exists"""
+        if hasattr(obj, 'linked_expense'):
+            expense = obj.linked_expense
+            return {
+                'id': expense.id,
+                'amount': str(expense.amount),
+                'origin': expense.origin
+            }
+        return None
+    
+    def create(self, validated_data):
+        user = self.context['request'].user
+        category_name = validated_data.pop('category')
+        
+        # Get or create category for this user
+        category, _ = ExpenseCategory.objects.get_or_create(
+            user=user,
+            category_name=category_name.lower().strip(),
+        )
+        
+        # Create receipt (signal will handle expense creation)
+        receipt = Receipt.objects.create(
+            user=user,
+            category=category,
+            **validated_data
+        )
+        
+        return receipt
+    
+
+
+from authentication.models import ParsedSMS
+
+class ParsedSMSController(serializers.ModelSerializer):
+    class Meta:
+        model=ParsedSMS
+        fields=['id','user','amount','timestamp','parsed_type','category']
+        read_only_fields=['id','timestamp','user']
+
+
+from rest_framework import serializers
+from .models import Goal, GoalIncomeCategoryRule, GoalNotification, IncomeCategory
+
+from rest_framework import serializers
+from .models import GoalIncomeCategoryRule, IncomeCategory
+
+class GoalRuleSerializer(serializers.ModelSerializer):
+    # Accept category name as a string from request JSON
+    income_category = serializers.CharField()
+
+    class Meta:
+        model = GoalIncomeCategoryRule
+        fields = ['income_category', 'percentage']
+
+    def validate_income_category(self, value):
+        # This makes sure category exists or creates new if not
+        category, created = IncomeCategory.objects.get_or_create(category_name=value)
+        return category
+
+    def create(self, validated_data):
+        # Replace string with actual IncomeCategory instance before saving
+        category = validated_data.pop('income_category')
+        validated_data['income_category'] = category
+        return super().create(validated_data)
+
+
+
+class GoalSerializer(serializers.ModelSerializer):
+    rules = GoalRuleSerializer(many=True, required=False)
+    progress_percentage = serializers.ReadOnlyField()
+    days_remaining = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Goal
+        fields = ['id', 'title', 'target_amount', 'current_amount', 'deadline',
+                  'is_completed', 'is_failed', 'rules', 'progress_percentage', 'days_remaining']
+
+    def create(self, validated_data):
+        rules = validated_data.pop('rules', [])
+        goal = Goal.objects.create(**validated_data)
+
+        for rule in rules:
+            GoalIncomeCategoryRule.objects.create(goal=goal, **rule)
+
+        GoalNotification.objects.create(
+            user=goal.user, goal=goal, type='created',
+            message=f"🎯 New goal created: '{goal.title}'"
+        )
+
+        return goal
+
+class GoalNotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GoalNotification
+        fields = ['id', 'goal', 'type', 'message', 'is_read', 'created_at']

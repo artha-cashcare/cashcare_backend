@@ -39,7 +39,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
-    'authentication'
+    'authentication',
+    'django_filters'
 ]
 AUTH_USER_MODEL = 'authentication.CustomUser'
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -60,11 +61,15 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
+  
 REST_FRAMEWORK = {
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.OrderingFilter',
+        'rest_framework.filters.SearchFilter',
+    ],
 
     'DEFAULT_AUTHENTICATION_CLASSES': (
-    
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     )
     
@@ -89,7 +94,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'cashcarebackend.wsgi.application'
-ALLOWED_HOSTS = ['10.0.2.2', 'localhost', '127.0.0.1','192.168.1.67','192.168.56.1','192.168.1.70','192.168.20.205']
+ALLOWED_HOSTS = ['10.0.2.2', 'localhost', '127.0.0.1','192.168.1.66','192.168.56.1','192.168.1.70','192.168.20.205', '192.168.1.68']
 
 
 # Database
@@ -98,7 +103,7 @@ ALLOWED_HOSTS = ['10.0.2.2', 'localhost', '127.0.0.1','192.168.1.67','192.168.56
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'artha_project',
+        'NAME': 'arthacashcare',
         'USER': 'postgres',
         'PASSWORD': 'lokraj',
         'HOST': 'localhost',

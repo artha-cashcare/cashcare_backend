@@ -22,6 +22,9 @@ import random
 from django.core.mail import send_mail
 from django.utils import timezone
 from .models import EmailOTP
+import re
+from django.http import HttpResponse
+
 # RegisterView: for user registration
 class RegisterView(generics.CreateAPIView):
     queryset = CustomUser.objects.all()
@@ -58,8 +61,51 @@ class LoginView(generics.GenericAPIView):
 
         })
 
-
-
+def home_view(request):
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Welcome to CashCare</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(to right, #667eea, #764ba2);
+                color: white;
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+            }
+            .container {
+                padding: 40px;
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 15px;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            }
+            h1 {
+                font-size: 3em;
+                margin-bottom: 0.5em;
+            }
+            p {
+                font-size: 1.2em;
+                margin-top: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 Welcome to CashCare Backend</h1>
+            <p>This is your API server. Use valid endpoints to get started.</p>
+        </div>
+    </body>
+    </html>
+    """
+    return HttpResponse(html_content)
 
 class PasswordResetRequestView(APIView):
     def post(self, request):
@@ -197,3 +243,214 @@ class ProfileView(APIView):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from .models import Income
+from .serializers import IncomeSerializer
+
+class IncomeViews(APIView):
+    permission_classes = [IsAuthenticated]  # Only logged-in users allowed
+
+    def post(self, request):
+        serializer = IncomeSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user)  # Assign logged-in user
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        incomes = Income.objects.filter(user=request.user)
+        return Response(list(incomes.values('amount', 'category', 'timestamp')), status=status.HTTP_200_OK)
+
+    def put(self, request, pk=None):
+        try:
+            income = Income.objects.get(pk=pk, user=request.user)  # Only update your own record
+            serializer = IncomeSerializer(income, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Income.DoesNotExist:
+            return Response({"error": "Income not found."}, status=status.HTTP_404_NOT_FOUND)
+    
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from .models import Expense
+from .serializers import ExpenseSerializer
+
+class ExpenseView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ExpenseSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user)  # ✅ Get user from JWT
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        expenses = Expense.objects.filter(user=request.user).order_by('-timestamp')
+        serializer = ExpenseSerializer(expenses, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+from rest_framework import generics, permissions, filters
+from rest_framework import generics, filters
+from .models import History
+from .serializers import HistorySerializer
+from django.utils import timezone
+from datetime import timedelta
+from django_filters.rest_framework import DjangoFilterBackend
+
+
+class HistoryListView(generics.ListAPIView):
+    serializer_class = HistorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
+    filterset_fields = ['type', 'category', 'source']
+    ordering_fields = ['timestamp', 'amount']
+    search_fields = ['category', 'description']
+    ordering = ['-timestamp']  # Default ordering
+
+    def get_queryset(self):
+        queryset = History.objects.filter(user=self.request.user)
+        
+        # Date filtering
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        
+        if date_from:
+            queryset = queryset.filter(timestamp__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(timestamp__lte=date_to)
+            
+        # Last N days filter
+        last_days = self.request.query_params.get('last_days')
+        if last_days and last_days.isdigit():
+            date_threshold = timezone.now() - timedelta(days=int(last_days))
+            queryset = queryset.filter(timestamp__gte=date_threshold)
+            
+        return queryset
+
+class HistoryDetailView(generics.RetrieveAPIView):
+    serializer_class = HistorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return History.objects.filter(user=self.request.user)
+    
+
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Receipt, ExpenseCategory
+from .serializers import ReceiptSerializer
+
+class ScanReceiptAPIView(APIView):
+    parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Validate required fields
+        required_fields = ['category', 'amount']
+        errors = {}
+        
+        for field in required_fields:
+            if field not in request.data or not request.data[field]:
+                errors[field] = ['This field is required.']
+        
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Prepare data for serializer
+        data = {
+            'category': request.data['category'],
+            'amount': request.data['amount'],
+            'date': request.data.get('date'),
+            'file_path': request.FILES.get('file_path'),
+            'scanned_text': request.data.get('scanned_text', '')
+        }
+        
+        serializer = ReceiptSerializer(
+            data=data,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            receipt = serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+from rest_framework import generics, permissions
+from .models import ParsedSMS
+from .serializers import ParsedSMSController
+
+class ParsedSMSListCreateView(generics.ListCreateAPIView):
+    serializer_class = ParsedSMSController
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ParsedSMS.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+    
+    
+
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from .models import Goal, GoalNotification
+from .serializers import GoalSerializer, GoalNotificationSerializer
+
+class GoalViewSet(viewsets.ModelViewSet):
+    queryset = Goal.objects.all()
+    serializer_class = GoalSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Goal.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=False)
+    def active(self, request):
+        goals = self.get_queryset().filter(is_completed=False, is_failed=False)
+        return Response(self.serializer_class(goals, many=True).data)
+
+    @action(detail=True)
+    def progress_data(self, request, pk=None):
+        goal = self.get_object()
+        return Response({
+            'current': goal.current_amount,
+            'target': goal.target_amount,
+            'progress_percentage': goal.progress_percentage,
+            'days_remaining': goal.days_remaining
+        })
+
+class GoalNotificationViewSet(viewsets.ModelViewSet):
+    queryset = GoalNotification.objects.all()
+    serializer_class = GoalNotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return GoalNotification.objects.filter(user=self.request.user)
+
+    @action(detail=False, methods=['patch'])
+    def mark_all_read(self, request):
+        self.get_queryset().filter(is_read=False).update(is_read=True)
+        return Response({'status': '✅ All marked as read'})
