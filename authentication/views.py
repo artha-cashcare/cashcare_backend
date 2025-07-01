@@ -513,3 +513,58 @@ class GoogleLoginView(APIView):
 
 
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.db.models import Sum
+from django.db.models.functions import TruncMonth
+from .models import Income, Expense
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def monthly_income_expense(request):
+    user = request.user
+
+    income = (
+        Income.objects.filter(user=user)
+        .annotate(month=TruncMonth('timestamp'))
+        .values('month')
+        .annotate(total=Sum('amount'))
+        .order_by('month')
+    )
+    expense = (
+        Expense.objects.filter(user=user)
+        .annotate(month=TruncMonth('timestamp'))
+        .values('month')
+        .annotate(total=Sum('amount'))
+        .order_by('month')
+    )
+
+    return Response({
+        'income': list(income),
+        'expense': list(expense)
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def category_summary(request):
+    user = request.user
+
+    income = (
+        Income.objects.filter(user=user)
+        .values('category__category_name')
+        .annotate(total=Sum('amount'))
+        .order_by('-total')
+    )
+    expense = (
+        Expense.objects.filter(user=user)
+        .values('category__category_name')
+        .annotate(total=Sum('amount'))
+        .order_by('-total')
+    )
+
+    return Response({
+        'income_by_category': list(income),
+        'expense_by_category': list(expense)
+    })

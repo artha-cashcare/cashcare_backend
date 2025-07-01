@@ -98,14 +98,14 @@ ALLOWED_HOSTS = ['10.0.2.2', 'localhost', '127.0.0.1','192.168.1.66','192.168.56
 
 
 # Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+# https://docs.djangoproject.com/en/5.2/ref/settings/#databases 
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'artha_project',
+        'NAME': 'arthacashcare',
         'USER': 'postgres',
-        'PASSWORD': '1234',
+        'PASSWORD': 'lokraj',
         'HOST': 'localhost',
         'PORT': '5432',
     }
