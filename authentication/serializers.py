@@ -261,14 +261,21 @@ class GoalSerializer(serializers.ModelSerializer):
         read_only_fields = ['user']  # User is set automatically
 
     def create(self, validated_data):
-        rules_data = validated_data.pop('rules', [])
-        goal = Goal.objects.create(**validated_data)
-        
-        # Create associated rules
+        rules_data = validated_data.pop('rules', [])  # adjust key if different
+        goal = Goal.objects.create(**validated_data)  # create your Goal instance
+
         for rule_data in rules_data:
-            GoalIncomeCategoryRule.objects.create(goal=goal, **rule_data)
-        
+            category_data = rule_data.pop('income_category')  # this is a dict
+        # get IncomeCategory instance from DB
+            income_category_obj = IncomeCategory.objects.get(category_name=category_data['category_name'])
+        # now create GoalIncomeCategoryRule with proper instance
+            GoalIncomeCategoryRule.objects.create(
+                    goal=goal,
+            income_category=income_category_obj,
+            **rule_data
+        )
         return goal
+
 
 class GoalNotificationSerializer(serializers.ModelSerializer):
     class Meta:

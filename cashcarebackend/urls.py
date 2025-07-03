@@ -5,7 +5,7 @@ from authentication.views import (
     PasswordResetRequestView, PasswordResetConfirmView, ResetPasswordView,
     SendOTPView, VerifyOTPView, ProfileView, GoogleLoginView,
     HistoryListView, HistoryDetailView, home_view, ScanReceiptAPIView,
-    ParsedSMSListCreateView, GoalViewSet, GoalNotificationViewSet
+    ParsedSMSListCreateView, GoalViewSet, GoalNotificationViewSet,UserChartData,monthly_income_chart,monthly_income_chart,MonthlyExpenseComparison,SourceExpenseComparison,PredictView
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.conf import settings
@@ -38,5 +38,10 @@ urlpatterns = [
     path('api/auth/google/', GoogleLoginView.as_view(), name='google_login'),
     path('stats/monthly/', views.monthly_income_expense, name='monthly-income-expense'),
     path('stats/category/', views.category_summary, name='category-summary'),
+    path('user-chart-data/', UserChartData.as_view(), name='user_chart_data'),
+    path("monthly-income-chart/",monthly_income_chart.as_view(), name="monthly_income_chart"),
+    path('api/expense_comparison/', MonthlyExpenseComparison.as_view(), name='expense_comparison'),
+    path('source-expense-comparison/', SourceExpenseComparison.as_view(), name='source_expense_comparison'),
+    path('api/predict/',PredictView.as_view(), name='predict'),
     path('', include(router.urls)),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

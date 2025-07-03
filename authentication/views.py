@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')  # Set non-GUI backend
+import matplotlib.pyplot as plt
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -12,18 +15,27 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 from django.conf import settings
-from rest_framework.views import APIView
+from rest_framework.views import APIView    
 from rest_framework.response import Response
 from rest_framework import status
 from django.views import View
 from django.shortcuts import render
 from django.http import Http404
 import random
+import logging
 from django.core.mail import send_mail
 from django.utils import timezone
 from .models import EmailOTP
 import re
 from django.http import HttpResponse
+import pandas as pd
+import matplotlib.pyplot as plt
+from io import BytesIO
+import base64
+import logging
+from django.views.decorators.csrf import csrf_exempt
+import json
+# from .models import SMSData  # Make sure this exists
 
 # RegisterView: for user registration
 class RegisterView(generics.CreateAPIView):
@@ -461,55 +473,42 @@ from google.auth.transport import requests
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from google.auth.transport import requests as google_requests
+
 
 User = get_user_model()
 
 class GoogleLoginView(APIView):
     def post(self, request):
         token = request.data.get('id_token')
-        if not token:
-            return Response({'error': 'Missing token'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            # VERIFY token (replace with your Web Client ID)
-            idinfo = id_token.verify_oauth2_token(
-                token,
-                requests.Request(),
-                '169167485751-b53dcjaa0bi7mugheioelt7sipboodbf.apps.googleusercontent.com'
-            )
+            # Verify token
+            idinfo = id_token.verify_oauth2_token(token, google_requests.Request())
 
-            email = idinfo.get('email')
-            first_name = idinfo.get('given_name', '')
-            last_name = idinfo.get('family_name', '')
-            picture_url = idinfo.get('picture', '')
+            email = idinfo['email']
+            name = idinfo.get('name', '')
+            first_name = name.split(' ')[0]
+            last_name = ' '.join(name.split(' ')[1:])
 
-            # Create or get user
-            user, created = User.objects.get_or_create(
-                email=email,
-                defaults={
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'is_verified': True,
-                    'is_active': True,
-                }
-            )
+            user, created = User.objects.get_or_create(email=email, defaults={
+                'username': email,
+                'first_name': first_name,
+                'last_name': last_name
+            })
 
-            # Optional: Save profile image URL if your model supports it
-            if created and picture_url:
-                user.profile_image = picture_url  # make sure it's a URLField or handle image saving
-                user.save()
-
+            # Return JWT
+            refresh = RefreshToken.for_user(user)
             return Response({
-                'message': 'Login successful',
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
                 'email': user.email,
                 'first_name': user.first_name,
                 'last_name': user.last_name,
-                'created': created,
+                'created': created
             })
 
         except ValueError as e:
-            print("Google token verification failed:", str(e))
-            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Invalid token'}, status=400)
 
 
 
@@ -544,7 +543,7 @@ def monthly_income_expense(request):
         'income': list(income),
         'expense': list(expense)
     })
-
+    
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -568,3 +567,316 @@ def category_summary(request):
         'income_by_category': list(income),
         'expense_by_category': list(expense)
     })
+
+import logging
+
+@permission_classes([IsAuthenticated])
+class UserChartData(APIView):
+    def get(self, request):
+        user = request.user  # Authenticated user from token
+
+        try:
+            # Fetch income and expense data for the user
+            income_data = Income.objects.filter(user=user).values('category').annotate(total=Sum('amount'))
+            expense_data = Expense.objects.filter(user=user).values('category').annotate(total=Sum('amount'))
+
+            if not income_data and not expense_data:
+                return Response({"error": "No income or expense data found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+            income_df = pd.DataFrame(list(income_data))
+            expense_df = pd.DataFrame(list(expense_data))
+
+            charts = {}
+
+            # Generate income chart
+            if not income_df.empty:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.bar(income_df['category'], income_df['total'], color='green', alpha=0.6)
+                ax.set_xlabel('Income Source')
+                ax.set_ylabel('Total Amount')
+                ax.set_title('Income')
+                buf = BytesIO()
+                plt.savefig(buf, format='png')
+                buf.seek(0)
+                charts['income_chart'] = base64.b64encode(buf.read()).decode('utf-8')
+                plt.close(fig)
+
+            # Generate expense chart
+            if not expense_df.empty:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.bar(expense_df['category'], expense_df['total'], color='red', alpha=0.6)
+                ax.set_xlabel('Expense Source')
+                ax.set_ylabel('Total Amount')
+                ax.set_title('Expenses')
+                buf = BytesIO()
+                plt.savefig(buf, format='png')
+                buf.seek(0)
+                charts['expense_chart'] = base64.b64encode(buf.read()).decode('utf-8')
+                plt.close(fig)
+
+            return Response({
+                'charts': charts,
+                'income': list(income_data),
+                'expense': list(expense_data),
+            })
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error generating chart data: {str(e)}")
+            return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@permission_classes([IsAuthenticated])
+class monthly_income_chart(APIView):
+    def get(self, request):
+        user = request.user  # Authenticated user
+
+        try:
+            income_data = (
+                Income.objects.filter(user=user)
+                .annotate(month=TruncMonth('timestamp'))
+                .values('month')
+                .annotate(total_income=Sum('amount'))
+                .order_by('month')
+            )
+
+            expense_data = (
+                Expense.objects.filter(user=user)
+                .annotate(month=TruncMonth('timestamp'))
+                .values('month')
+                .annotate(total_expense=Sum('amount'))
+                .order_by('month')
+            )
+
+            if not income_data and not expense_data:
+                return Response({"error": "No income or expense data found for this user."}, status=status.HTTP_404_NOT_FOUND)
+
+            income_df = pd.DataFrame(list(income_data))
+            expense_df = pd.DataFrame(list(expense_data))
+
+            income_df['month'] = income_df['month'].dt.to_period('M')
+            expense_df['month'] = expense_df['month'].dt.to_period('M')
+
+            charts = {}
+
+            if not income_df.empty:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.bar(income_df['month'].astype(str), income_df['total_income'], color='green', label='Income')
+                ax.set_xlabel('Month')
+                ax.set_ylabel('Total Income')
+                ax.set_title('Monthly Income')
+                ax.legend()
+                buf = BytesIO()
+                plt.savefig(buf, format='png')
+                buf.seek(0)
+                charts['income_chart'] = base64.b64encode(buf.read()).decode('utf-8')
+                plt.close(fig)
+
+            if not expense_df.empty:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.bar(expense_df['month'].astype(str), expense_df['total_expense'], color='red', label='Expense')
+                ax.set_xlabel('Month')
+                ax.set_ylabel('Total Expense')
+                ax.set_title('Monthly Expenses')
+                ax.legend()
+                buf = BytesIO()
+                plt.savefig(buf, format='png')
+                buf.seek(0)
+                charts['expense_chart'] = base64.b64encode(buf.read()).decode('utf-8')
+                plt.close(fig)
+
+            return Response({
+                'charts': charts,
+                'income': list(income_data),
+                'expense': list(expense_data),
+            })
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+
+            logger.error(f"Error generating monthly summary: {str(e)}")
+            return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+@permission_classes([IsAuthenticated])
+class MonthlyExpenseComparison(APIView):
+    def get(self, request):
+        user = request.user
+
+        try:
+            expense_data = (
+                Expense.objects.filter(user=user)
+                .annotate(month=TruncMonth('timestamp'))
+                .values('month')
+                .annotate(total_expense=Sum('amount'))
+                .order_by('month')
+            )
+
+            expense_dict = {item["month"]: item["total_expense"] for item in expense_data}
+            sorted_months = sorted(expense_dict.keys(), reverse=True)
+
+            if len(sorted_months) < 2:
+                return Response({"message": "Not enough data to compare expenses."})
+
+            current_month = sorted_months[0]
+            last_month = sorted_months[1]
+
+            current_expense = expense_dict.get(current_month, 0)
+            last_expense = expense_dict.get(last_month, 0)
+
+            if last_expense > 0:
+                expense_change = ((current_expense - last_expense) / last_expense) * 100
+            else:
+                expense_change = 0
+
+            if expense_change > 50:
+                message = f"Warning! Your expenses increased by {expense_change:.2f}% this month. Try reducing unnecessary spending."
+            elif expense_change > 20:
+                message = f"Your expenses increased by {expense_change:.2f}%. Consider reviewing your budget!"
+            elif expense_change < 0:
+                message = f"Great job! You spent {abs(expense_change):.2f}% less than last month. Keep saving!"
+            else:
+                message = "Your expenses are stable. Maintain good financial habits!"
+
+            return Response({
+                'current_month': str(current_month),
+                'last_month': str(last_month),
+                'current_expense': current_expense,
+                'last_expense': last_expense,
+                'expense_change': round(expense_change, 2),
+                'message': message
+            })
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+
+            logger.error(f"Error generating expense comparison: {str(e)}")
+            return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@permission_classes([IsAuthenticated])
+class SourceExpenseComparison(APIView):
+    def get(self, request):
+        user = request.user
+
+        try:
+            expense_data = (
+                Expense.objects.filter(user=user)
+                .values('source')
+                .annotate(total_expense=Sum('amount'))
+                .order_by('-total_expense')
+            )
+
+            if not expense_data:
+                return Response({"message": "No expense data available."})
+
+            highest_source = expense_data[0]['source']
+            highest_expense = expense_data[0]['total_expense']
+
+            message = f"Alert! You have spent the most on '{highest_source}' with an expense of {highest_expense:.2f}. Consider reviewing your spending."
+
+            return Response({
+                'source_expenses': expense_data,
+                'highest_source': highest_source,
+                'highest_expense': highest_expense,
+                'message': message
+            })
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error generating source expense comparison: {str(e)}")
+            return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def get(self, request):
+        user_id = request.headers.get('User-ID')  # Get user_id from request header
+
+        if not user_id:
+            return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if user exists
+        try:
+            user = User.objects.get(user_id=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            # Fetch total expenses per source
+            expense_data = (
+                Expense.objects.filter(user_id=user_id)
+                .values('source')
+                .annotate(total_expense=Sum('amount'))  # Sum expenses for each source
+                .order_by('-total_expense')  # Sort descending by expense amount
+            )
+
+            if not expense_data:
+                return Response({"message": "No expense data available."})
+
+            # Identify the source with the highest spending
+            highest_source = expense_data[0]['source']
+            highest_expense = expense_data[0]['total_expense']
+
+            message = f"Alert! You have spent the most on '{highest_source}' with an expense of {highest_expense:.2f}. Consider reviewing your spending."
+
+            return Response({
+                'source_expenses': expense_data,
+                'highest_source': highest_source,
+                'highest_expense': highest_expense,
+                'message': message
+            })
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error generating source expense comparison: {str(e)}")
+            return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+from datetime import datetime
+from django.http import HttpResponse
+from django.db.models import Sum
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+import matplotlib.pyplot as plt
+import pandas as pd
+from io import BytesIO
+import numpy as np
+import json
+import base64
+import logging
+from rest_framework.decorators import api_view
+from django.views.decorators.csrf import csrf_exempt
+from PIL import Image
+import re
+import os
+from django.utils.decorators import method_decorator
+from django.http import JsonResponse
+from .models import Receipt
+import matplotlib
+from django.db.models.functions import TruncMonth
+import pickle
+from .models import Goal
+from .serializers import GoalSerializer
+from .utils import predict
+from joblib import load
+matplotlib.use('Agg')
+
+class PredictView(APIView):
+ def post(self, request):
+        features = request.data.get('features', [])
+        
+        # Check if the number of features is correct (5)
+        if len(features) != 5:
+            return Response({"error": "Missing or incorrect number of features. Expected 5."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Get the prediction, category, and recommendation
+            prediction, category, recommendation = predict(features)
+            
+            return Response({
+                "prediction": prediction,
+                "category": category,
+                "recommendation": recommendation
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
