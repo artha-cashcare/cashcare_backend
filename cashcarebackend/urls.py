@@ -5,13 +5,14 @@ from authentication.views import (
     PasswordResetRequestView, PasswordResetConfirmView, ResetPasswordView,
     SendOTPView, VerifyOTPView, ProfileView, GoogleLoginView,
     HistoryListView, HistoryDetailView, home_view, ScanReceiptAPIView,
-    ParsedSMSListCreateView, GoalViewSet, GoalNotificationViewSet,UserChartData,monthly_income_chart,monthly_income_chart,MonthlyExpenseComparison,SourceExpenseComparison,PredictView
+    ParsedSMSListCreateView, GoalViewSet, GoalNotificationViewSet,
+    UserChartData, monthly_income_chart, MonthlyExpenseComparison,
+    SourceExpenseComparison, PredictView, monthly_income_expense, category_summary
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from authentication import views
 
 router = DefaultRouter()
 router.register('goals', GoalViewSet)
@@ -36,12 +37,12 @@ urlpatterns = [
     path('api/scan_receipt/', ScanReceiptAPIView.as_view(), name='scan_receipt'),
     path('parsed-sms/', ParsedSMSListCreateView.as_view(), name='parsed_sms'),
     path('api/auth/google/', GoogleLoginView.as_view(), name='google_login'),
-    path('stats/monthly/', views.monthly_income_expense, name='monthly-income-expense'),
-    path('stats/category/', views.category_summary, name='category-summary'),
+    path('stats/monthly/', monthly_income_expense, name='monthly-income-expense'),
+    path('stats/category/', category_summary, name='category-summary'),
     path('user-chart-data/', UserChartData.as_view(), name='user_chart_data'),
-    path("monthly-income-chart/",monthly_income_chart.as_view(), name="monthly_income_chart"),
+    path("monthly-income-chart/", monthly_income_chart.as_view(), name="monthly_income_chart"),
     path('api/expense_comparison/', MonthlyExpenseComparison.as_view(), name='expense_comparison'),
     path('source-expense-comparison/', SourceExpenseComparison.as_view(), name='source_expense_comparison'),
-    path('api/predict/',PredictView.as_view(), name='predict'),
+    path('api/predict/', PredictView.as_view(), name='predict'),
     path('', include(router.urls)),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -16,6 +16,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework.views import APIView    
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.views import View
@@ -36,7 +37,6 @@ import logging
 from django.views.decorators.csrf import csrf_exempt
 import json
 # from .models import SMSData  # Make sure this exists
-
 # RegisterView: for user registration
 class RegisterView(generics.CreateAPIView):
     queryset = CustomUser.objects.all()
