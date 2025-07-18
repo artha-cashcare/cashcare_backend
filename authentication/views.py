@@ -577,8 +577,19 @@ class UserChartData(APIView):
 
         try:
             # Fetch income and expense data for the user
-            income_data = Income.objects.filter(user=user).values('category').annotate(total=Sum('amount'))
-            expense_data = Expense.objects.filter(user=user).values('category').annotate(total=Sum('amount'))
+            income_data = Income.objects.filter(user=user).values('category__category_name').annotate(total=Sum('amount'))
+            expense_data = Expense.objects.filter(user=user).values('category__category_name').annotate(total=Sum('amount'))
+
+# Rename the key from 'category__name' → 'category'
+            income_data = list(income_data)
+            for item in income_data:
+                item['category'] = item.pop('category__category_name')
+
+            expense_data = list(expense_data)
+            for item in expense_data:
+                item['category'] = item.pop('category__category_name')
+
+
 
             if not income_data and not expense_data:
                 return Response({"error": "No income or expense data found for this user."}, status=status.HTTP_404_NOT_FOUND)
@@ -760,9 +771,10 @@ class SourceExpenseComparison(APIView):
         user = request.user
 
         try:
+            # Query to get category_name instead of category ID
             expense_data = (
                 Expense.objects.filter(user=user)
-                .values('source')
+                .values('category__category_name')  # <-- get category_name via related field
                 .annotate(total_expense=Sum('amount'))
                 .order_by('-total_expense')
             )
@@ -770,52 +782,17 @@ class SourceExpenseComparison(APIView):
             if not expense_data:
                 return Response({"message": "No expense data available."})
 
-            highest_source = expense_data[0]['source']
+            # Convert to list so we can modify keys
+            expense_data = list(expense_data)
+
+            # Rename 'category__category_name' key to 'category' for clarity
+            for item in expense_data:
+                item['category'] = item.pop('category__category_name')
+
+            highest_source = expense_data[0]['category']
             highest_expense = expense_data[0]['total_expense']
 
-            message = f"Alert! You have spent the most on '{highest_source}' with an expense of {highest_expense:.2f}. Consider reviewing your spending."
-
-            return Response({
-                'source_expenses': expense_data,
-                'highest_source': highest_source,
-                'highest_expense': highest_expense,
-                'message': message
-            })
-
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error generating source expense comparison: {str(e)}")
-            return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def get(self, request):
-        user_id = request.headers.get('User-ID')  # Get user_id from request header
-
-        if not user_id:
-            return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Check if user exists
-        try:
-            user = User.objects.get(user_id=user_id)
-        except User.DoesNotExist:
-            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        try:
-            # Fetch total expenses per source
-            expense_data = (
-                Expense.objects.filter(user_id=user_id)
-                .values('source')
-                .annotate(total_expense=Sum('amount'))  # Sum expenses for each source
-                .order_by('-total_expense')  # Sort descending by expense amount
-            )
-
-            if not expense_data:
-                return Response({"message": "No expense data available."})
-
-            # Identify the source with the highest spending
-            highest_source = expense_data[0]['source']
-            highest_expense = expense_data[0]['total_expense']
-
-            message = f"Alert! You have spent the most on '{highest_source}' with an expense of {highest_expense:.2f}. Consider reviewing your spending."
+            message = f"Alert! You have spent the most on {highest_source} with an expense of {highest_expense:.2f}. Consider reviewing your spending."
 
             return Response({
                 'source_expenses': expense_data,
@@ -880,3 +857,91 @@ class PredictView(APIView):
         
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+from django.utils.timezone import make_aware
+
+
+class MonthlySummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        report_type = request.GET.get("type", "month")
+        year = request.GET.get("year")
+        month = request.GET.get("month")
+        quarter = request.GET.get("quarter")
+
+        def summarize(start, end):
+            transactions = History.objects.filter(user=user, timestamp__gte=start, timestamp__lt=end)
+            income = transactions.filter(type="income").aggregate(total=Sum("amount"))["total"] or 0
+            expenses = transactions.filter(type="expense").aggregate(total=Sum("amount"))["total"] or 0
+            remaining = income - expenses
+            breakdown_qs = transactions.filter(type="expense").values("category").annotate(amount=Sum("amount")).order_by("-amount")
+            breakdown = [{"category": b["category"], "amount": b["amount"]} for b in breakdown_qs]
+            top_txn_qs = transactions.order_by("-amount")[:5].values("category", "amount", "timestamp")
+            top_txns = [{"title": t["category"], "amount": t["amount"], "date": t["timestamp"].date()} for t in top_txn_qs]
+            return {
+                "total_income": income,
+                "total_expenses": expenses,
+                "remaining": remaining,
+                "breakdown": breakdown,
+                "top_transactions": top_txns,
+            }
+
+        try:
+            if report_type == "month":
+                if not month:
+                    return Response({"error": "month is required"}, status=400)
+                start = make_aware(datetime.strptime(month + "-01", "%Y-%m-%d"))
+                end = make_aware(datetime.strptime(f"{start.year}-{start.month + 1 if start.month < 12 else 1}-01", "%Y-%m-%d")) if start.month < 12 else make_aware(datetime.strptime(f"{start.year + 1}-01-01", "%Y-%m-%d"))
+                return Response({"month": start.strftime("%B %Y"), **summarize(start, end)})
+
+            elif report_type == "quarter":
+                if not (year and quarter):
+                    return Response({"error": "year and quarter are required"}, status=400)
+                quarter = int(quarter)
+                start_month = 3 * (quarter - 1) + 1
+                start = make_aware(datetime.strptime(f"{year}-{start_month:02d}-01", "%Y-%m-%d"))
+                end_month = start_month + 3
+                if end_month > 12:
+                    end = make_aware(datetime.strptime(f"{int(year) + 1}-01-01", "%Y-%m-%d"))
+                else:
+                    end = make_aware(datetime.strptime(f"{year}-{end_month:02d}-01", "%Y-%m-%d"))
+                return Response({"quarter": f"Q{quarter} {year}", **summarize(start, end)})
+
+            elif report_type == "year":
+                if not year:
+                    return Response({"error": "year is required"}, status=400)
+                start = make_aware(datetime.strptime(f"{year}-01-01", "%Y-%m-%d"))
+                end = make_aware(datetime.strptime(f"{int(year)+1}-01-01", "%Y-%m-%d"))
+                return Response({"year": year, **summarize(start, end)})
+
+            elif report_type == "all_months":
+                if not year:
+                    return Response({"error": "year is required"}, status=400)
+                reports = []
+                for m in range(1, 13):
+                    start = make_aware(datetime.strptime(f"{year}-{m:02d}-01", "%Y-%m-%d"))
+                    end_month = m + 1 if m < 12 else 1
+                    end_year = int(year) if m < 12 else int(year) + 1
+                    end = make_aware(datetime.strptime(f"{end_year}-{end_month:02d}-01", "%Y-%m-%d"))
+                    summary = summarize(start, end)
+                    summary["month"] = start.strftime("%B")
+                    reports.append(summary)
+                return Response({"year": year, "monthly_reports": reports})
+
+            else:
+                return Response({"error": "Invalid report type"}, status=400)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def verify_payment(request):
+    user = request.user
+    user.is_verified = True
+    user.save()
+    return Response({'message': 'User verified as premium.'})

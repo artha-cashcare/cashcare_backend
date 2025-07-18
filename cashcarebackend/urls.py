@@ -7,7 +7,7 @@ from authentication.views import (
     HistoryListView, HistoryDetailView, home_view, ScanReceiptAPIView,
     ParsedSMSListCreateView, GoalViewSet, GoalNotificationViewSet,
     UserChartData, monthly_income_chart, MonthlyExpenseComparison,
-    SourceExpenseComparison, PredictView, monthly_income_expense, category_summary
+    SourceExpenseComparison, PredictView, monthly_income_expense, category_summary,MonthlySummaryView,verify_payment
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.conf import settings
@@ -44,5 +44,8 @@ urlpatterns = [
     path('api/expense_comparison/', MonthlyExpenseComparison.as_view(), name='expense_comparison'),
     path('source-expense-comparison/', SourceExpenseComparison.as_view(), name='source_expense_comparison'),
     path('api/predict/', PredictView.as_view(), name='predict'),
+    path('monthly-summary/', MonthlySummaryView.as_view(), name='monthly-summary'),
+    path('api/verify-payment/', verify_payment),
+
     path('', include(router.urls)),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -314,4 +314,15 @@ def create_expense_history(sender, instance, created, **kwargs):
             reference_id=instance.id  # Store original Expense ID
         )
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def verify_payment(request):
+    user = request.user
+    user.is_verified = True
+    user.save()
+    return Response({'message': 'User verified as premium.'})

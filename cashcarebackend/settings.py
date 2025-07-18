@@ -94,7 +94,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'cashcarebackend.wsgi.application'
-ALLOWED_HOSTS = ['10.0.2.2', 'localhost', '127.0.0.1','192.168.1.66','192.168.56.1','192.168.1.70','192.168.20.205', '192.168.1.68']
+ALLOWED_HOSTS = ['10.0.2.2', 'localhost', '127.0.0.1','192.168.1.66','192.168.56.1','192.168.1.70','192.168.20.205', '192.168.1.69']
 
 
 # Database
