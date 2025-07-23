@@ -19,6 +19,7 @@ class CustomUserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
         return self.create_user(email, password, **extra_fields)
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
@@ -176,7 +177,6 @@ class Expense(models.Model):
     def __str__(self):
         return f"{self.category} - {self.amount}"
 
-
 class ParsedSMS(models.Model):
     PARSED_TYPE_CHOICES = ( 
         ('income', 'Income'),
@@ -192,12 +192,14 @@ class ParsedSMS(models.Model):
     parsed_type = models.CharField(max_length=10, choices=PARSED_TYPE_CHOICES)
     category = models.CharField(max_length=100, blank=True, null=True)
 
-
     class Meta:
         indexes = [
             models.Index(fields=['user', 'timestamp']),
         ]
         ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.parsed_type.capitalize()} of {self.amount} on {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
 
 
 from django.db import models
@@ -214,6 +216,9 @@ class Goal(models.Model):
     is_completed = models.BooleanField(default=False)
     is_failed = models.BooleanField(default=False)
 
+
+    def __str__(self):
+        return f"{self.title} - {self.target_amount} by {self.deadline or 'No Deadline'}"
 
     def save(self, *args, **kwargs):
         if self.current_amount >= self.target_amount:
@@ -240,13 +245,6 @@ class GoalIncomeCategoryRule(models.Model):
         MinValueValidator(0), MaxValueValidator(100)
     ])
 
-class GoalNotification(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    goal = models.ForeignKey(Goal, on_delete=models.CASCADE)
-    type = models.CharField(max_length=20)
-    message = models.TextField()
-    is_read = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class History(models.Model):
@@ -284,9 +282,44 @@ class History(models.Model):
     
 
 
+# At the BOTTOM of your models.py file (after History model but before signals)
+class Payment(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='user_payments'
+    )    
+    product_id = models.CharField(max_length=100)
+    product_name = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    reference_id = models.CharField(max_length=100, unique=True)
+    status = models.CharField(max_length=50)
+    transaction_date = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
 
-    from django.db.models.signals import post_save
-from django.dispatch import receiver
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Payment'
+        verbose_name_plural = 'Payments'
+
+    def __str__(self):
+        return f"Payment #{self.id} - {self.product_name}"
+
+# Add this at the VERY BOTTOM of models.py
+print("🔥 Payment model loaded successfully! 🔥")  # Debug line
+
+
+class Notification(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    type = models.CharField(max_length=100)  # 'goal', 'payment', etc.
+    message = models.TextField()
+    read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    goal = models.ForeignKey(Goal, null=True, blank=True, on_delete=models.CASCADE)  # optional FK
+    payment = models.ForeignKey(Payment, null=True, blank=True, on_delete=models.CASCADE)  # optional FK
+
+
+
 
 @receiver(post_save, sender=Income)
 def create_income_history(sender, instance, created, **kwargs):
@@ -314,15 +347,3 @@ def create_expense_history(sender, instance, created, **kwargs):
             reference_id=instance.id  # Store original Expense ID
         )
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def verify_payment(request):
-    user = request.user
-    user.is_verified = True
-    user.save()
-    return Response({'message': 'User verified as premium.'})

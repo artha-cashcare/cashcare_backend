@@ -129,7 +129,10 @@ class ExpenseSerializer(serializers.ModelSerializer):
     
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        representation['category'] = instance.category.category_name
+        # ✅ Safe check for null category
+        representation['category'] = (
+            instance.category.category_name if instance.category else "Uncategorized"
+        )
         return representation
 
     
@@ -223,13 +226,13 @@ class ParsedSMSController(serializers.ModelSerializer):
 
 
 from rest_framework import serializers
-from .models import Goal, GoalIncomeCategoryRule, GoalNotification, IncomeCategory
+from .models import Goal, GoalIncomeCategoryRule, Notification, IncomeCategory
 
 from rest_framework import serializers
 from .models import GoalIncomeCategoryRule, IncomeCategory
 
 from rest_framework import serializers
-from .models import Goal, GoalIncomeCategoryRule, GoalNotification, IncomeCategory
+from .models import Goal, GoalIncomeCategoryRule, Notification, IncomeCategory
 
 class GoalRuleSerializer(serializers.ModelSerializer):
     income_category = serializers.CharField(source='income_category.category_name')
@@ -267,7 +270,7 @@ class GoalSerializer(serializers.ModelSerializer):
         for rule_data in rules_data:
             category_data = rule_data.pop('income_category')  # this is a dict
         # get IncomeCategory instance from DB
-            income_category_obj = IncomeCategory.objects.get(category_name=category_data['category_name'])
+            income_category_obj, created = IncomeCategory.objects.get_or_create(category_name=category_data['category_name'])
         # now create GoalIncomeCategoryRule with proper instance
             GoalIncomeCategoryRule.objects.create(
                     goal=goal,
@@ -277,8 +280,8 @@ class GoalSerializer(serializers.ModelSerializer):
         return goal
 
 
-class GoalNotificationSerializer(serializers.ModelSerializer):
+class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
-        model = GoalNotification
-        fields = ['id', 'goal', 'type', 'message', 'is_read', 'created_at']
+        model = Notification
+        fields = ['id', 'goal', 'payment', 'type', 'message', 'read', 'created_at']
         read_only_fields = ['created_at']

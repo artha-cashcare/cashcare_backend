@@ -5,22 +5,30 @@ from authentication.views import (
     PasswordResetRequestView, PasswordResetConfirmView, ResetPasswordView,
     SendOTPView, VerifyOTPView, ProfileView, GoogleLoginView,
     HistoryListView, HistoryDetailView, home_view, ScanReceiptAPIView,
-    ParsedSMSListCreateView, GoalViewSet, GoalNotificationViewSet,
+    ParsedSMSListCreateView, GoalViewSet, NotificationViewSet,
     UserChartData, monthly_income_chart, MonthlyExpenseComparison,
-    SourceExpenseComparison, PredictView, monthly_income_expense, category_summary,MonthlySummaryView,verify_payment
+    SourceExpenseComparison, PredictView, monthly_income_expense, category_summary,MonthlySummaryView,dashboard,custom_admin_dashboard,VerifyAndStorePaymentView
 )
+from suggestionAI.views import generate_ai_suggestion
 from rest_framework_simplejwt.views import TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
+from django.contrib import admin
+from django.urls import path, include
+from django.conf.urls.i18n import i18n_patterns
+from authentication.admin import my_admin_site  # change yourapp    to your app name
 
 router = DefaultRouter()
 router.register('goals', GoalViewSet)
-router.register('goal-notifications', GoalNotificationViewSet)
+router.register('goal-notifications', NotificationViewSet)
+# admin.site.index = custom_admin_dashboard  # 👈 override default admin view
 
 urlpatterns = [
     path('', home_view),
-    path('admin/', admin.site.urls),
+    path('admin/', my_admin_site.urls),
+         # path("admin/dashboard/", custom_admin_dashboard, name="custom_admin_dashboard"),
+    path('i18n/', include('django.conf.urls.i18n')),  # <-- REQUIRED for Jazzmin language sw
     path('api/auth/register', RegisterView.as_view(), name="auth_register"),
     path('api/auth/login', LoginView.as_view(), name="auth_login"),
     path('api/password_reset/', PasswordResetRequestView.as_view(), name='password_reset'),
@@ -45,7 +53,14 @@ urlpatterns = [
     path('source-expense-comparison/', SourceExpenseComparison.as_view(), name='source_expense_comparison'),
     path('api/predict/', PredictView.as_view(), name='predict'),
     path('monthly-summary/', MonthlySummaryView.as_view(), name='monthly-summary'),
-    path('api/verify-payment/', verify_payment),
+    path('dashboard/', dashboard),
+    path('verify-payment/', VerifyAndStorePaymentView.as_view(), name='verify-payment'),
+
+    path('suggestionAI/', include('suggestionAI.urls')),  
+
+
+    # path('', include('webapp.urls')),
+
 
     path('', include(router.urls)),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

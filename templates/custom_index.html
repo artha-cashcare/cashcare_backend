@@ -1,0 +1,118 @@
+{% extends "admin/index.html" %}
+{% load static %}
+{% load json_script %}
+
+{% block content %}
+<h1 style="color:indigo;">📊 Dashboard</h1>
+
+<div style="display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap;">
+  <div style="flex: 1; min-width: 180px; padding: 20px; background: #eef; border-radius: 12px; text-align: center; box-shadow: 0 0 8px rgba(0,0,0,0.1);">
+    <h3>Total Users</h3>
+    <h2>{{ total_users }}</h2>
+  </div>
+  <div style="flex: 1; min-width: 180px; padding: 20px; background: #def; border-radius: 12px; text-align: center; box-shadow: 0 0 8px rgba(0,0,0,0.1);">
+    <h3>Total Payments Received</h3>
+    <h2>${{ total_payments_received }}</h2>
+  </div>
+  <div style="flex: 1; min-width: 180px; padding: 20px; background: #fde; border-radius: 12px; text-align: center; box-shadow: 0 0 8px rgba(0,0,0,0.1);">
+    <h3>Manual Income</h3>
+    <h2>${{ manual_income }}</h2>
+  </div>
+  <div style="flex: 1; min-width: 180px; padding: 20px; background: #eed; border-radius: 12px; text-align: center; box-shadow: 0 0 8px rgba(0,0,0,0.1);">
+    <h3>Scanned Expense</h3>
+    <h2>${{ scanned_expense }}</h2>
+  </div>
+</div>
+
+<div style="display: flex; gap: 30px; flex-wrap: wrap;">
+  <div style="flex: 1; min-width: 320px; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+    <h3>Income vs Expense</h3>
+    <canvas id="pieChart" width="400" height="200"></canvas>
+  </div>
+  <div style="flex: 1; min-width: 320px; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+    <h3>Monthly Income & Payments</h3>
+    <canvas id="lineChart" width="400" height="200"></canvas>
+  </div>
+</div>
+
+{{ income_expense_labels|json_script:"income-expense-labels" }}
+{{ income_expense_data|json_script:"income-expense-data" }}
+{{ monthly_labels|json_script:"monthly-labels" }}
+{{ monthly_income_data|json_script:"monthly-income-data" }}
+{{ monthly_payment_data|json_script:"monthly-payment-data" }}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const pieCtx = document.getElementById('pieChart').getContext('2d');
+  const lineCtx = document.getElementById('lineChart').getContext('2d');
+
+  const pieLabels = JSON.parse(document.getElementById('income-expense-labels').textContent);
+  const pieData = JSON.parse(document.getElementById('income-expense-data').textContent);
+  const lineLabels = JSON.parse(document.getElementById('monthly-labels').textContent);
+  const monthlyIncome = JSON.parse(document.getElementById('monthly-income-data').textContent);
+  const monthlyPayments = JSON.parse(document.getElementById('monthly-payment-data').textContent);
+
+  new Chart(pieCtx, {
+    type: 'doughnut',
+    data: {
+      labels: pieLabels,
+      datasets: [{
+        data: pieData,
+        backgroundColor: ['#4caf50', '#f44336'],
+      }]
+    },
+    options: {
+      responsive: true,
+      cutout: '70%',
+      plugins: {
+        legend: { position: 'bottom' }
+      }
+    }
+  });
+
+  new Chart(lineCtx, {
+    type: 'line',
+    data: {
+      labels: lineLabels,
+      datasets: [
+        {
+          label: 'Monthly Income',
+          data: monthlyIncome,
+          borderColor: '#4caf50',
+          backgroundColor: 'rgba(76, 175, 80, 0.2)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3
+        },
+        {
+          label: 'Monthly Payments',
+          data: monthlyPayments,
+          borderColor: '#2196f3',
+          backgroundColor: 'rgba(33, 150, 243, 0.2)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: {
+        mode: 'nearest',
+        axis: 'x',
+        intersect: false
+      },
+      plugins: {
+        legend: { position: 'top' }
+      },
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
+});
+</script>
+
+{{ block.super }}
+{% endblock %}

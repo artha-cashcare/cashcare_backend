@@ -115,17 +115,31 @@ def create_expense_from_receipt(sender, instance, created, **kwargs):
             )
 
 
-
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .models import Income, GoalIncomeCategoryRule, GoalNotification
+from .models import Income, GoalIncomeCategoryRule, Notification, Goal
+
+@receiver(post_save, sender=Goal)
+def notify_goal_creation(sender, instance, created, **kwargs):
+    if created:
+        Notification.objects.create(
+            user=instance.user,
+            goal=instance,
+            type='created',
+            message=f"New goal created: '{instance.title}' (Target: Rs.{instance.target_amount})"
+        )
 
 @receiver(post_save, sender=Income)
 def auto_add_goal_progress(sender, instance, created, **kwargs):
     if not created:
         return
 
-    rules = GoalIncomeCategoryRule.objects.filter(income_category=instance.category).select_related('goal')
+    # Remove the wrong Notification creation for Income creation here
+
+    rules = GoalIncomeCategoryRule.objects.filter(
+        income_category=instance.category,
+        goal__user=instance.user
+    ).select_related('goal')
 
     for rule in rules:
         goal = rule.goal
@@ -136,15 +150,15 @@ def auto_add_goal_progress(sender, instance, created, **kwargs):
         goal.current_amount += added
         goal.save()
 
-        GoalNotification.objects.create(
+        Notification.objects.create(
             user=instance.user,
             goal=goal,
             type='progress',
-            message=f"₹{added:.2f} added to '{goal.title}'. Progress: {goal.progress_percentage:.1f}%"
+            message=f"Rs.{added:.2f} added to '{goal.title}'. Progress: {goal.progress_percentage:.1f}%"
         )
 
         if goal.days_remaining <= 7 and goal.progress_percentage < 50:
-            GoalNotification.objects.create(
+            Notification.objects.create(
                 user=instance.user,
                 goal=goal,
                 type='low_progress',
@@ -152,9 +166,39 @@ def auto_add_goal_progress(sender, instance, created, **kwargs):
             )
 
         if goal.current_amount >= goal.target_amount:
-            GoalNotification.objects.create(
+            Notification.objects.create(
                 user=instance.user,
                 goal=goal,
                 type='completed',
                 message=f"🎉 Goal completed: '{goal.title}'!"
+            )
+
+
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from .models import ParsedSMS, Income, Expense, IncomeCategory, ExpenseCategory
+@receiver(post_save, sender=ParsedSMS)
+def create_income_or_expense_from_sms(sender, instance, created, **kwargs):
+    if created:
+        category_name = instance.category
+
+        if instance.parsed_type == 'income':
+            category_obj, _ = IncomeCategory.objects.get_or_create(category_name=category_name)
+            Income.objects.create(
+                user=instance.user,
+                amount=instance.amount,
+                category=category_obj,
+                timestamp=instance.timestamp,
+                origin='scanned'  # 👈 TRACK ORIGIN
+            )
+
+        elif instance.parsed_type == 'expense':
+            category_obj, _ = ExpenseCategory.objects.get_or_create(category_name=category_name)
+            Expense.objects.create(
+                user=instance.user,
+                amount=instance.amount,
+                category=category_obj,
+                timestamp=instance.timestamp,
+                origin='scanned'  # 👈 TRACK ORIGIN
             )

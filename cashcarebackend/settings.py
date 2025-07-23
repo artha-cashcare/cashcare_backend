@@ -9,12 +9,28 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+
 import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),  # increase to 30 mins or more
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),     # refresh token expiry
+}
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -25,13 +41,15 @@ SECRET_KEY = 'django-insecure-%)5legz&qn7dhz7_85a2dr7_z2trp2bh(y=j*j$$%86ab)fsh0
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['*','192.168.1.69']
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    'jazzmin',
+    'django.contrib.admin',     # ✅ This comes after grappelli
+    # 'grappelli',                # ✅ MUST come before admin
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -40,8 +58,10 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'authentication',
-    'django_filters'
+    'django_filters',
+    'suggestionAI'
 ]
+
 AUTH_USER_MODEL = 'authentication.CustomUser'
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'  # or another provider
@@ -160,3 +180,88 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# # settings.py
+# # settings.py
+# JAZZMIN_SETTINGS = {
+#     # "site_title": "Artha Cashcare Dashboard",
+#     # "site_header": "Artha Cashcare",
+#     # "site_logo": "path/to/your-logo.png",
+#     # "site_logo_classes": "img-circle",
+#     # "welcome_sign": "Welcome to Artha Cashcare Financial Dashboard",
+#     # "copyright": "Artha Cashcare",
+#     # "show_ui_builder": True,
+    
+#     # Visual upgrades
+#     "theme": "dark",
+#     "dark_mode_theme": "darkly",
+#     "navigation_expanded": True,
+#     "changeform_format": "carousel",
+    
+#     # Custom icons
+#     "icons": {
+#         "auth.user": "fas fa-user-tie",
+#         "auth.Group": "fas fa-users",
+#         "app.Expenses": "fas fa-money-bill-wave",
+#         "app.Incomes": "fas fa-chart-line",
+#         "app.Goals": "fas fa-bullseye",
+#         "app.Parsed_smss": "fas fa-sms",
+#     },
+# }
+
+# settings.py
+JAZZMIN_SETTINGS = {
+    # "site_title": "Artha Cashcare Dashboard",
+    # "site_header": "Artha Cashcare",
+    # "site_logo": "path/to/your-logo.png",
+    # "site_logo_classes": "img-circle",
+    # "welcome_sign": "Welcome to Artha Cashcare Financial Dashboard",
+    "copyright": "Artha Cashcare",
+    # "show_ui_builder": True,
+    
+    # Visual upgrades
+    "theme": "dark",
+    "dark_mode_theme": "darkly",
+    "navigation_expanded": True,
+    "changeform_format": "carousel",
+     "site_brand": "Artha",
+    
+    # Custom icons
+   "icons": {
+        "auth.Group": "fas fa-users-cog",
+        "authentication.CustomUser": "fas fa-user",
+        "authentication.Expense": "fas fa-minus-circle",
+        "authentication.Income": "fas fa-plus-circle",
+        "authentication.Goal": "fas fa-bullseye",
+        "authentication.ParsedSMS":"fas fa-envelope-open-text",
+    },
+    "order_with_respect_to": [
+        "authentication",
+        "income",
+        "expense",
+        "goals"
+    ],
+        "changeform_format_overrides": {"auth.user": "collapsible", "auth.group": "vertical_tabs"},
+    "show_sidebar": True,
+
+}
+
+JAZZMIN_UI_TWEAKS = {
+    # "navbar_small_text": True,
+    # "footer_small_text": True,    
+    # "body_small_text": False,
+    # "brand_small_text": True,
+    "brand_colour": "navbar-indigo",
+    "accent": "accent-primary",
+    "navbar": "navbar-indigo navbar-dark",
+    "no_navbar_border": False,
+    "sidebar": "sidebar-dark-indigo",
+    "sidebar_nav_small_text": True,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": True,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": True,
+    "theme":'simplex'
+}

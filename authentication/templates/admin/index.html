@@ -1,0 +1,94 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block content %}
+<h1>My Income Expense Admin Dashboard</h1>
+
+<div class="cards" style="display:flex; gap:20px; margin-bottom:30px;">
+    <div class="card" style="flex:1; padding:20px; background:#f0f0f0; border-radius:8px; text-align:center;">
+        <h2>Total Income</h2>
+        <p>{{ total_income }}</p>
+    </div>
+    <div class="card" style="flex:1; padding:20px; background:#f0f0f0; border-radius:8px; text-align:center;">
+        <h2>Total Expense</h2>
+        <p>{{ total_expense }}</p>
+    </div>
+    <div class="card" style="flex:1; padding:20px; background:#f0f0f0; border-radius:8px; text-align:center;">
+        <h2>Balance</h2>
+        <p>{{ balance }}</p>
+    </div>
+    <div class="card" style="flex:1; padding:20px; background:#f0f0f0; border-radius:8px; text-align:center;">
+        <h2>Total Users</h2>
+        <p>{{ total_users }}</p>
+    </div>
+</div>
+
+<h3>Expense by Category</h3>
+<canvas id="pieChart" width="400" height="300"></canvas>
+
+<h3>Monthly Income vs Expense</h3>
+<canvas id="barChart" width="600" height="300"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+(function() {
+    // Parse Django json_script data safely
+    const expenseByCategory = JSON.parse(document.getElementById('expenseByCategoryData').textContent);
+    const monthlyStats = JSON.parse(document.getElementById('monthlyStatsData').textContent);
+
+    // Prepare pie chart data
+    const pieLabels = expenseByCategory.map(e => e.category);
+    const pieData = expenseByCategory.map(e => e.total);
+
+    const pieCtx = document.getElementById('pieChart').getContext('2d');
+    new Chart(pieCtx, {
+        type: 'pie',
+        data: {
+            labels: pieLabels,
+            datasets: [{
+                label: 'Expenses by Category',
+                data: pieData,
+                backgroundColor: ['#FF6384','#36A2EB','#FFCE56','#4BC0C0','#9966FF','#FF9F40'],
+            }]
+        }
+    });
+
+    // Prepare bar chart data
+    const barLabels = monthlyStats.map(e => e.month);
+    const incomeData = monthlyStats.map(e => e.income);
+    const expenseData = monthlyStats.map(e => e.expense);
+
+    const barCtx = document.getElementById('barChart').getContext('2d');
+    new Chart(barCtx, {
+        type: 'bar',
+        data: {
+            labels: barLabels,
+            datasets: [
+                {
+                    label: 'Income',
+                    data: incomeData,
+                    backgroundColor: '#36A2EB'
+                },
+                {
+                    label: 'Expense',
+                    data: expenseData,
+                    backgroundColor: '#FF6384'
+                }
+            ]
+        },
+        options: {
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+})();
+</script>
+
+<!-- Add these just before the script tag or anywhere in your template -->
+{{ expense_by_category|json_script:"expenseByCategoryData" }}
+{{ monthly_stats|json_script:"monthlyStatsData" }}
+
+{% endblock %}

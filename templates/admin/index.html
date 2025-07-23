@@ -1,0 +1,360 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block content %}
+<style>
+/* ===== Info boxes styling ===== */
+.dashboard-container {
+    display: flex;
+    gap: 20px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+.info-box {
+    flex: 1 1 22%;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    min-width: 150px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease;
+    text-align: center;
+}
+.info-box:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 15px rgba(0,0,0,0.3);
+}
+.info-box:nth-child(2) { background: linear-gradient(135deg, #FF6F61, #DE4313); }
+.info-box:nth-child(3) { background: linear-gradient(135deg, #42E695, #3BB2B8); }
+.info-box:nth-child(4) { background: linear-gradient(135deg, #DCE35B, #45B649); }
+.info-value {
+    font-size: 15px;
+    font-weight: 700;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin-bottom: 6px;
+    line-height: 1.2;
+}
+.info-title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    line-height: 1.0;
+    margin: 0;
+}
+
+/* ===== Top users + charts ===== */
+.top-users-wrapper {
+    display: flex;
+    gap: 30px;
+    margin-top: 10px;
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.top-users-section {
+    flex: 1;
+    max-width: 400px;
+    overflow-y: auto;
+}
+.top-users-section h2 {
+    margin-bottom: 12px;
+    font-size: 20px;
+}
+.filter-tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.filter-tabs button {
+    background: #eee;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.25s ease;
+}
+.filter-tabs .active-tab {
+    background: #2a5298;
+    color: white;
+}
+.user-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 15px;
+}
+.user-email {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.amount {
+    font-weight: 700;
+    min-width: 110px;
+    text-align: right;
+    white-space: nowrap;
+}
+.amount.income { color: #42E695; }
+.amount.expense { color: #FF6F61; }
+.chart-container {
+    flex: 1;
+    max-width: 400px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.info-value.parsed-split {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px; /* small space between */
+}
+
+/* ===== Stacked bar chart ===== */
+.stacked-bar-wrapper {
+    margin-top: 30px;
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+</style>
+
+<!-- 4 info boxes -->
+<div class="dashboard-container">
+    <div class="info-box">
+        <div class="info-title">Total Users</div>
+        <div class="info-value">{{ total_users }}</div>
+    </div>
+    <div class="info-box">
+        <div class="info-title">Scanned Expenses</div>
+        <div class="info-value">{{ scanned_expenses }}</div>
+    </div>
+    <div class="info-box">
+        <div class="info-title">Manual Expenses</div>
+        <div class="info-value">{{ manual_expenses }}</div>
+    </div>
+    <div class="info-box">
+        <div class="info-title">Parsed Amount</div>
+        <div class="info-value parsed-split">
+            <span class="income-amount">{{ total_income }}</span>
+            <span class="slash">/</span>
+            <span class="expense-amount">{{ total_expense }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Top users list + doughnut chart -->
+<div class="top-users-wrapper">
+    <div class="top-users-section">
+        <h2>Top Users</h2>
+        <div class="filter-tabs">
+            <button onclick="showTab('income')" class="active-tab">Income</button>
+            <button onclick="showTab('expense')">Expense</button>
+        </div>
+
+        <div id="income-tab" class="user-list-tab">
+            {% for user in combined_users %}
+            <div class="user-item" {% if user.income == 0 %}style="display:none;"{% endif %}>
+                <div class="user-email" title="{{ user.email }}">{{ user.email }}</div>
+                <span class="amount income">+ Rs. {{ user.income|default:"0" }}</span>
+            </div>
+            {% empty %}
+            <p>No users found.</p>
+            {% endfor %}
+        </div>
+
+        <div id="expense-tab" class="user-list-tab" style="display:none;">
+            {% for user in combined_users %}
+            <div class="user-item" {% if user.expense == 0 %}style="display:none;"{% endif %}>
+                <div class="user-email" title="{{ user.email }}">{{ user.email }}</div>
+                <span class="amount expense">– Rs. {{ user.expense|default:"0" }}</span>
+            </div>
+            {% empty %}
+            <p>No users found.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="topUsersChart" width="200" height="200"></canvas>
+    </div>
+</div>
+
+<!-- Category-wise stacked bar chart -->
+<div class="stacked-bar-wrapper">
+    <h2>Income/Expense by User</h2>
+    <div class="filter-tabs" style="margin-bottom: 20px;">
+        <button id="incomeStackedBtn" class="active-tab" onclick="showStackedChart('income')">Income</button>
+        <button id="expenseStackedBtn" onclick="showStackedChart('expense')">Expense</button>
+    </div>
+    <canvas id="stackedBarChart" width="500" height="200"></canvas>
+</div>
+
+{{ block.super }}
+
+<!-- Load Chart.js only once -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Pass data as JSON scripts -->
+{{ combined_users|json_script:"combined-users-data" }}
+
+{{ income_category_data|json_script:"income-category-data" }}
+{{ income_categories|json_script:"income-categories" }}
+{{ income_users|json_script:"income-users" }}
+
+{{ expense_category_data|json_script:"expense-category-data" }}
+{{ expense_categories|json_script:"expense-categories" }}
+{{ expense_users|json_script:"expense-users" }}
+
+<script>
+// Tab switcher function
+function showTab(type) {
+    document.getElementById('income-tab').style.display = (type === 'income') ? 'block' : 'none';
+    document.getElementById('expense-tab').style.display = (type === 'expense') ? 'block' : 'none';
+
+    const tabs = document.querySelectorAll('.filter-tabs button');
+    tabs.forEach(btn => btn.classList.remove('active-tab'));
+    document.querySelector(`.filter-tabs button[onclick="showTab('${type}')"]`).classList.add('active-tab');
+}
+
+// === Donut Chart - ORIGINAL CODE ===
+
+const combinedUsers = JSON.parse(document.getElementById('combined-users-data').textContent);
+const labels = combinedUsers.map(u => u.email);
+
+function generateColors(baseHue, count) {
+    const colors = [];
+    for(let i = 0; i < count; i++) {
+        let saturation = 70 - i * 10;
+        let lightness = 50 + (i % 2) * 10;
+        colors.push(`hsl(${baseHue}, ${saturation}%, ${lightness}%)`);
+    }
+    return colors;
+}
+
+const incomeColors = generateColors(140, combinedUsers.length);
+const expenseColors = generateColors(0, combinedUsers.length);
+
+const incomeData = combinedUsers.map(u => u.income);
+const expenseData = combinedUsers.map(u => u.expense);
+
+const ctx = document.getElementById('topUsersChart').getContext('2d');
+
+const topUsersChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Income',
+                data: incomeData,
+                backgroundColor: incomeColors,
+                borderColor: incomeColors.map(c => c.replace('hsl', 'hsla').replace('%)', '%, 1)')),
+                borderWidth: 1
+            },
+            {
+                label: 'Expense',
+                data: expenseData,
+                backgroundColor: expenseColors,
+                borderColor: expenseColors.map(c => c.replace('hsl', 'hsla').replace('%)', '%, 1)')),
+                borderWidth: 1
+            }
+        ]
+    },
+    options: {
+        responsive: false,
+        plugins: {
+            legend: {
+                position: 'bottom',
+            },
+            tooltip: {
+                enabled: true
+            }
+        }
+    }
+});
+
+// === Stacked Bar Chart CODE ===
+
+const incomeCategoryData = JSON.parse(document.getElementById('income-category-data').textContent);
+const incomeCategories = JSON.parse(document.getElementById('income-categories').textContent);
+const incomeUsers = JSON.parse(document.getElementById('income-users').textContent);
+
+const expenseCategoryData = JSON.parse(document.getElementById('expense-category-data').textContent);
+const expenseCategories = JSON.parse(document.getElementById('expense-categories').textContent);
+const expenseUsers = JSON.parse(document.getElementById('expense-users').textContent);
+
+const ctxStacked = document.getElementById('stackedBarChart').getContext('2d');
+
+function getDatasets(categoryData, categories, users) {
+    const colors = [
+        '#4dc9f6', '#f67019', '#f53794', '#537bc4', '#acc236',
+        '#166a8f', '#00a950', '#58595b', '#8549ba', '#ffa500'
+    ];
+    const datasets = [];
+    categories.forEach((category, i) => {
+        const data = users.map(user => {
+            return categoryData[user] && categoryData[user][category] ? categoryData[user][category] : 0;
+        });
+        datasets.push({
+            label: category,
+            data: data,
+            backgroundColor: colors[i % colors.length],
+            stack: 'stack1',
+        });
+    });
+    return datasets;
+}
+
+let stackedBarChart = new Chart(ctxStacked, {
+    type: 'bar',
+    data: {
+        labels: incomeUsers,
+        datasets: getDatasets(incomeCategoryData, incomeCategories, incomeUsers)
+    },
+    options: {
+        responsive: false,
+        scales: {
+            x: { stacked: true, title: { display: true, text: 'Users' } },
+            y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Amount (Rs)' } }
+        },
+        plugins: {
+            legend: { position: 'bottom' },
+            tooltip: { enabled: true }
+        }
+    }
+});
+
+function showStackedChart(type) {
+    document.getElementById('incomeStackedBtn').classList.toggle('active-tab', type === 'income');
+    document.getElementById('expenseStackedBtn').classList.toggle('active-tab', type === 'expense');
+
+    if (type === 'income') {
+        stackedBarChart.data.labels = incomeUsers;
+        stackedBarChart.data.datasets = getDatasets(incomeCategoryData, incomeCategories, incomeUsers);
+    } else {
+        stackedBarChart.data.labels = expenseUsers;
+        stackedBarChart.data.datasets = getDatasets(expenseCategoryData, expenseCategories, expenseUsers);
+    }
+    stackedBarChart.update();
+}
+</script>
+
+{% endblock %}
+
+
+
+

@@ -51,27 +51,26 @@ class LoginView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
+        
         email = serializer.validated_data['email']
         password = serializer.validated_data['password']
+        
+        print(f"📧 Login attempt - Email: {email}, Password: {password}")
+        
+        # Authenticate with the backend
+        user = authenticate(request, username=email, password=password)
+        print(f"👤 User object after auth: {user}")
 
-        try:
-            user = CustomUser.objects.get(email=email)
-        except CustomUser.DoesNotExist:
-            return Response({"detail": "Invalid email or password"}, status=401)
+        if user:
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "user": UserSerializer(user).data
+            })
+        return Response({"detail": "Invalid credentials"}, status=401)
+    
 
-        user = authenticate(request, email=email, password=password)
-
-        if user is None:
-            return Response({"detail": "Invalid email or password"}, status=401)
-
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-            "user": UserSerializer(user, context={"request": request}).data
-
-        })
 
 def home_view(request):
     html_content = """
@@ -425,8 +424,8 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import Goal, GoalNotification
-from .serializers import GoalSerializer, GoalNotificationSerializer
+from .models import Goal, Notification
+from .serializers import GoalSerializer,NotificationSerializer
 
 class GoalViewSet(viewsets.ModelViewSet):
     queryset = Goal.objects.all()
@@ -454,17 +453,17 @@ class GoalViewSet(viewsets.ModelViewSet):
             'days_remaining': goal.days_remaining
         })
 
-class GoalNotificationViewSet(viewsets.ModelViewSet):
-    queryset = GoalNotification.objects.all()
-    serializer_class = GoalNotificationSerializer
+class NotificationViewSet(viewsets.ModelViewSet):
+    queryset = Notification.objects.all()
+    serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return GoalNotification.objects.filter(user=self.request.user)
+        return Notification.objects.filter(user=self.request.user)
 
     @action(detail=False, methods=['patch'])
     def mark_all_read(self, request):
-        self.get_queryset().filter(is_read=False).update(is_read=True)
+        self.get_queryset().filter(read=False).update(read=True)
         return Response({'status': '✅ All marked as read'})
 
 from django.contrib.auth import get_user_model
@@ -938,10 +937,86 @@ class MonthlySummaryView(APIView):
 
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def verify_payment(request):
-    user = request.user
-    user.is_verified = True
-    user.save()
-    return Response({'message': 'User verified as premium.'})
+
+
+
+
+def dashboard(requesst):
+    return HttpResponse("This is the testing of dashboard")
+
+
+from django.contrib.auth import get_user_model
+from django.shortcuts import render
+from django.contrib.admin.views.decorators import staff_member_required
+from django.db.models import Sum
+
+@staff_member_required
+def custom_admin_dashboard(request):
+    User = get_user_model()
+    
+    total_users = User.objects.count()
+    scanned_expenses = Expense.objects.filter(origin='scanned').count()
+    manual_expenses = Expense.objects.filter(origin='manual').count()
+    total_parsed_amount = ParsedSMS.objects.aggregate(total=Sum('amount'))['total'] or 0
+
+    context = {
+        "total_users": total_users,
+        "scanned_expenses": scanned_expenses,
+        "manual_expenses": manual_expenses,
+        "total_parsed_amount": total_parsed_amount,
+    }
+
+    return render(request, "custom_dashboard.html", context)
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from authentication.models import Payment, Notification
+from django.utils import timezone
+from datetime import datetime, timezone as dt_timezone
+
+
+class VerifyAndStorePaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        data = request.data
+        user = request.user
+
+        transaction_date_str = request.data['transactionDetails']['date']
+        naive_dt = datetime.fromisoformat(transaction_date_str)
+        aware_dt = timezone.make_aware(naive_dt, timezone=dt_timezone.utc)
+        try:
+            # 1. Store payment
+            Payment.objects.create(
+                user=user,
+                product_id=data['productId'],
+                product_name=data['productName'],
+                amount=data['totalAmount'],
+                reference_id=data['transactionDetails']['referenceId'],
+                status=data['transactionDetails']['status'],
+                transaction_date=aware_dt
+            )
+
+            # 2. Create goal notification
+            Notification.objects.create(
+                user=user,
+                type='payment',
+                message=f"Payment successful for {data['productName']} (₹{data['totalAmount']})"
+            )
+
+            # 3. Mark user as verified (premium)
+            user.is_verified = True
+            user.save()
+
+            return Response({
+                'status': 'success',
+                'message': 'Payment recorded and user verified as premium.'
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
